@@ -1,17 +1,19 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
-from pathlib import Path
+#from pathlib import Path
 import time as t
 import pyqtgraph as pg
+from scipy.interpolate import interp1d
+from pyqtgraph import QtCore
 
 
 class SpectrumRescale:
 
     def __init__(self,
-                 imPath='.\\calib\\'
-                        'SET6\\SET6\\magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF',
-                 calPath='.\\calib\\dsdE_Small_LHC.txt',
+                 imPath='./calib/'
+                        'SET6/SET6/magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF',
+                 calPath='./calib/dsdE_Small_LHC.txt',
                  pixel_per_mm=1,
                  plotCal=False,
                  deflection='L',
@@ -56,6 +58,9 @@ class SpectrumRescale:
 
     def load_image(self):
         self.im = np.array(Image.open(self.imPath))
+        mean_im = np.average(self.im)
+        self.im[self.im<mean_im]=0
+        
 
     '''Placeholder for filtering out meaningless data'''
     def remove_meaningless_points(self, x_array, y_array):
@@ -80,6 +85,9 @@ class SpectrumRescale:
             offset = self.im.shape[1]-self.zero_px
             self.s = (np.array(range(0, self.im.shape[1]))-offset)/self.pixel_per_mm
             self.E = np.interp(self.s, self.s_file, self.E_file, right=float('nan'), left=float('nan'))
+            self.E = np.flip(self.E)
+
+            self.dsdE = np.interp(self.s, self.s_file, self.dsdE_file, right=float('nan'), left=float('nan'))
 
         except Exception as e:
             print(f'Exception: {e}')
@@ -110,49 +118,60 @@ class SpectrumRescale:
         self.y_scale = np.array(range(0, self.im.shape[0])) / self.pixel_per_mm
 
 
+
+
 if __name__ == "__main__":
 
     '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
-    r = SpectrumRescale(plotCal=False, pixel_per_mm=20)
+    r = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
     '''Both functions work, to be thoroughly tested ;)'''
     r.rescale2D_zero(zero_px=1953)
     #r.rescale2D_ref((40,10))
 
     '''Analysis'''
     data = r.im # shape: (n_y, n_x)
-    x = r.E
-    y = r.y_scale
+    energy = r.E
+    angle = r.y_scale
+    dsdE = r.dsdE
 
     '''To be integrated to class'''
     # Find valid x indices (non-NaN)
-    valid_mask = ~np.isnan(x)
-    x_valid = x[valid_mask]
+    valid_mask = ~np.isnan(energy)
+    energy_valid = energy[valid_mask]
+    dsdE_valid = dsdE[valid_mask]
     data_valid = data[:, valid_mask]  # Keep all rows, filter columns
+    
+    energy_regular = np.linspace(energy_valid.min(), energy_valid.max(), len(energy_valid))
+    interp_func = interp1d(energy_valid, data_valid, axis=1, kind='linear')
+    image_resampled = interp_func(energy_regular)
 
-    '''Plot, PyQtGraph'''
+
     app = pg.mkQApp()
-    win = pg.GraphicsLayoutWidget(show=True, title="2D Data with Valid X")
-    plot = win.addPlot(title="Filtered Data")
+    win = pg.GraphicsLayoutWidget()
+    win.show()
 
-    # Create ImageItem
-    img = pg.ImageItem()
+    plot = win.addPlot()
+    img = pg.ImageItem(image_resampled.T)  # transpose so axes align correctly
     plot.addItem(img)
 
-    # Set the image data
-    img.setImage(data_valid.T)  # Note: transpose for correct orientation
+    # map the image coordinates to physical coordinates
+    img.setRect(
+        energy_regular[0],           # x origin
+        angle[0],                    # y origin
+        energy_regular[-1] - energy_regular[0],  # width
+        angle[-1] - angle[0]         # height
+    )
 
-    # Scale and position the image to match your axes
-    # Calculate the transform to map pixel coordinates to data coordinates
-    scale_x = (x_valid[-1] - x_valid[0]) / (len(x_valid) - 1)
-    scale_y = (y[-1] - y[0]) / (len(y) - 1)
-    img.setTransform(pg.QtGui.QTransform().translate(x_valid[0], y[0]).scale(scale_x, scale_y))
+    # add axis labels
+    plot.setLabel('bottom', 'Energy', units='MeV')  # adjust units
+    plot.setLabel('left', 'Angle', units='mrad')
 
-    # Add colorbar
-    colorbar = pg.ColorBarItem(values=(data_valid.min(), data_valid.max()), colorMap='viridis')
-    colorbar.setImageItem(img)
-    win.addItem(colorbar)
+    # optional: add a color bar
+    from pyqtgraph import ColorBarItem
+    bar = ColorBarItem(values=(image_resampled.min(), image_resampled.max()))
+    img.setColorMap(pg.colormap.get('viridis'))
+    bar.setImageItem(img)
+    win.addItem(bar)
 
-    app.exec()
-
-
-
+    # start the event loop if running standalone
+    pg.exec()
