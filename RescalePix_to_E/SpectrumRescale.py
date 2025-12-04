@@ -6,6 +6,7 @@ import time as t
 import pyqtgraph as pg
 from scipy.interpolate import interp1d
 from pyqtgraph import QtCore
+from pyqtgraph import ColorBarItem
 
 
 class SpectrumRescale:
@@ -122,6 +123,11 @@ class SpectrumRescale:
 
 if __name__ == "__main__":
 
+    app = pg.mkQApp()
+    win = pg.GraphicsLayoutWidget()
+    win.show()
+
+    
     '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
     r = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
     '''Both functions work, to be thoroughly tested ;)'''
@@ -141,16 +147,16 @@ if __name__ == "__main__":
     dsdE_valid = dsdE[valid_mask]
     data_valid = data[:, valid_mask]  # Keep all rows, filter columns
     
+    t0=t.time()
     energy_regular = np.linspace(energy_valid.min(), energy_valid.max(), len(energy_valid))
     interp_func = interp1d(energy_valid, data_valid, axis=1, kind='linear')
     image_resampled = interp_func(energy_regular)
+    print(f'Time for data manipulation : {t.time()-t0}')
 
 
-    app = pg.mkQApp()
-    win = pg.GraphicsLayoutWidget()
-    win.show()
-
+    
     plot = win.addPlot()
+    t0=t.time()
     img = pg.ImageItem(image_resampled.T)  # transpose so axes align correctly
     plot.addItem(img)
 
@@ -165,13 +171,15 @@ if __name__ == "__main__":
     # add axis labels
     plot.setLabel('bottom', 'Energy', units='MeV')  # adjust units
     plot.setLabel('left', 'Angle', units='mrad')
+    print(f'Time for creating visual objects : {t.time()-t0}')
 
     # optional: add a color bar
-    from pyqtgraph import ColorBarItem
+    t0=t.time()
     bar = ColorBarItem(values=(image_resampled.min(), image_resampled.max()))
     img.setColorMap(pg.colormap.get('viridis'))
     bar.setImageItem(img)
     win.addItem(bar)
+    print(f'Time for creating new visual objects : {t.time()-t0}')
 
     # start the event loop if running standalone
     pg.exec()
