@@ -8,6 +8,7 @@ from scipy.interpolate import interp1d
 from pyqtgraph import QtCore
 from pyqtgraph import ColorBarItem
 
+VIRIDIS = pg.colormap.get('viridis')
 
 class SpectrumRescale:
 
@@ -119,67 +120,83 @@ class SpectrumRescale:
         self.y_scale = np.array(range(0, self.im.shape[0])) / self.pixel_per_mm
 
 
+class SpectrumImage:
+    def __init__(self,spectrum: SpectrumRescale):
+        data = spectrum.im # shape: (n_y, n_x)
+        energy = spectrum.E
+        self.angle = spectrum.y_scale
+
+        valid_mask = ~np.isnan(energy)
+        energy_valid = energy[valid_mask]
+        data_valid = data[:, valid_mask]  # Keep all rows, filter columns
+
+        self.energy_regular = np.linspace(energy_valid.min(), energy_valid.max(), len(energy_valid))
+        interp_func = interp1d(energy_valid, data_valid, axis=1, kind='linear')
+        self.image_resampled = interp_func(self.energy_regular)
+
+class SpectrumGraph:
+    def __init__(self, _spectrum_image: SpectrumImage):
+        t0=t.time()
+        self.app = pg.mkQApp()
+        self.win = pg.GraphicsLayoutWidget()
+        self.win.show()
+
+        self.plot = self.win.addPlot()
+        print(f'Time elapsed for window creation: {t.time()-t0}s')
+    
+        #self.img = pg.ImageItem(_spectrum_image.image_resampled.T)  # transpose so axes align correctly
+        #self.plot.addItem(self.img)
+
+        # add axis labels
+        t0=t.time()
+        self.set_labels()
+        print(f'Time elapsed for setting labels {t.time()-t0}s')
+        t0=t.time()
+        self.set_image(_spectrum_image)
+        print(f'Time elapsed for setting image {t.time()-t0}s')
+        t0=t.time()
+        self.set_colorbar(_spectrum_image)
+        print(f'Time elapsed for setting colorbar {t.time()-t0}s')
+
+        
+
+    def set_labels(self):
+        self.plot.setLabel('bottom', 'Energy', units='MeV')  # adjust units
+        self.plot.setLabel('left', 'Angle', units='mrad')
+    
+
+    def set_image(self, _spectrum_image):
+        self.img = pg.ImageItem(_spectrum_image.image_resampled.T)  # transpose so axes align correctly
+        self.plot.addItem(self.img)
+        self.img.setRect(
+        _spectrum_image.energy_regular[0],           # x origin
+        _spectrum_image.angle[0],                    # y origin
+        _spectrum_image.energy_regular[-1] - _spectrum_image.energy_regular[0],  # width
+        _spectrum_image.angle[-1] - _spectrum_image.angle[0]         # height
+        )
+    def set_colorbar(self, _spectrum_image):
+        self.bar = ColorBarItem(values=(_spectrum_image.image_resampled.min(), _spectrum_image.image_resampled.max()))
+        self.img.setColorMap(VIRIDIS)
+        self.bar.setImageItem(self.img)
+        self.win.addItem(self.bar)
+
 
 
 if __name__ == "__main__":
-
-    app = pg.mkQApp()
-    win = pg.GraphicsLayoutWidget()
-    win.show()
-
     
     '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
-    r = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
-    '''Both functions work, to be thoroughly tested ;)'''
-    r.rescale2D_zero(zero_px=1953)
-    #r.rescale2D_ref((40,10))
-
-    '''Analysis'''
-    data = r.im # shape: (n_y, n_x)
-    energy = r.E
-    angle = r.y_scale
-    dsdE = r.dsdE
-
-    '''To be integrated to class'''
-    # Find valid x indices (non-NaN)
-    valid_mask = ~np.isnan(energy)
-    energy_valid = energy[valid_mask]
-    dsdE_valid = dsdE[valid_mask]
-    data_valid = data[:, valid_mask]  # Keep all rows, filter columns
-    
     t0=t.time()
-    energy_regular = np.linspace(energy_valid.min(), energy_valid.max(), len(energy_valid))
-    interp_func = interp1d(energy_valid, data_valid, axis=1, kind='linear')
-    image_resampled = interp_func(energy_regular)
-    print(f'Time for data manipulation : {t.time()-t0}')
+    spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
+    spectrum.rescale2D_zero(zero_px=1953)
+    print(f'{t.time()-t0}s to rescale spectrum')
 
-
-    
-    plot = win.addPlot()
     t0=t.time()
-    img = pg.ImageItem(image_resampled.T)  # transpose so axes align correctly
-    plot.addItem(img)
+    spectrum_image = SpectrumImage(spectrum)
+    print(f'{t.time()-t0}s to process data for plotting')
 
-    # map the image coordinates to physical coordinates
-    img.setRect(
-        energy_regular[0],           # x origin
-        angle[0],                    # y origin
-        energy_regular[-1] - energy_regular[0],  # width
-        angle[-1] - angle[0]         # height
-    )
-
-    # add axis labels
-    plot.setLabel('bottom', 'Energy', units='MeV')  # adjust units
-    plot.setLabel('left', 'Angle', units='mrad')
-    print(f'Time for creating visual objects : {t.time()-t0}')
-
-    # optional: add a color bar
     t0=t.time()
-    bar = ColorBarItem(values=(image_resampled.min(), image_resampled.max()))
-    img.setColorMap(pg.colormap.get('viridis'))
-    bar.setImageItem(img)
-    win.addItem(bar)
-    print(f'Time for creating new visual objects : {t.time()-t0}')
+    spectrum_graph = SpectrumGraph(spectrum_image)
+    print(f'{t.time()-t0}s to create graphical objects')
 
     # start the event loop if running standalone
     pg.exec()
