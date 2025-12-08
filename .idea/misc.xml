@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
+<<<<<<< HEAD
+  <component name="Black">
+    <option name="sdkName" value="C:\ProgramData\miniconda3" />
+  </component>
+  <component name="ProjectRootManager" version="2" project-jdk-name="C:\ProgramData\miniconda3" project-jdk-type="Python SDK" />
+=======
   <component name="ProjectRootManager" version="2" project-jdk-name="Python 3.14" project-jdk-type="Python SDK" />
+>>>>>>> bcbc2c820d48cc13f0551b624a97c794122e2f41
 </project>
