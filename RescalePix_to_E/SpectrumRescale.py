@@ -61,8 +61,8 @@ class SpectrumRescale:
 
     def load_image(self):
         self.im = np.array(Image.open(self.imPath))
-        #mean_im = np.average(self.im)
-        #self.im[self.im<mean_im]=0
+        mean_im = np.average(self.im)
+        self.im[self.im<mean_im*2]=0
         
 
         # TWO DIFFERENT SPECTROMETER GEOMETRIES :
@@ -123,9 +123,7 @@ class SpectrumRescale:
 
         self.s_ref = np.interp(refPoint[1], np.flip(self.E_file), np.flip(self.s_file),
                                right=np.nan, left=np.nan) # Flip not too clean, to be sanitized ;)
-        print(f'self.s_ref = {self.s_ref}')
         self.s = np.array(range(0, self.im.shape[1])) / self.pixel_per_mm - (self.s_ref - refPoint[0])
-        print(f'self.s min = {min(self.s)}; self.s max = {max(self.s)}')
         self.E = np.interp(self.s, self.s_file, self.E_file, right=np.nan, left=np.nan)
         self.E = np.flip(self.E)
 
@@ -142,6 +140,40 @@ class SpectrumRescale:
         dNdE = lambda dndpix, bkg, dsdE: (dndpix-bkg) * abs(dsdE) * self.pixel_per_mm
         dNdE_vect = np.vectorize(dNdE)
         return dNdE_vect(dndpix_array, bkg_array, dsdE_array)
+    
+    def bin_1MeV(self, dn_dE):
+    
+        # Define bin edges at integer MeV values
+        E_min = np.floor(min(self.E))
+        E_max = np.ceil(max(self.E))
+   
+        bin_edges = np.arange(E_min, E_max + 1, 1.0)  # 1 MeV bins
+        
+        # Initialize arrays for binned data
+        n_bins = len(bin_edges) - 1
+        binned_counts = np.zeros(n_bins)
+        bin_centers = bin_edges[:-1] + 0.5
+        
+        # For each original data point, add its contribution to the appropriate bin
+        for i in range(len(self.E)):
+            # Find which bin this energy falls into
+            bin_idx = np.searchsorted(bin_edges[:-1], self.E[i], side='right') - 1
+            
+            if 0 <= bin_idx < n_bins:
+                # Estimate the energy width this point represents
+                if i == 0:
+                    dE = self.E[1] - self.E[0]
+                elif i == len(self.E) - 1:
+                    dE = self.E[-1] - self.E[-2]
+                else:
+                    dE = (self.E[i+1] - self.E[i-1]) / 2
+                
+                # Add counts from this point (counts/MeV * MeV = counts)
+                binned_counts[bin_idx] += dn_dE[i] * dE
+        
+        # Average counts per MeV in each bin
+        binned_counts_per_MeV = binned_counts / 1.0  # divided by bin width (1 MeV)
+        return bin_centers, binned_counts, binned_counts_per_MeV
 
     def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int):
         '''
@@ -163,10 +195,12 @@ class SpectrumRescale:
         dn_dpix = np.sum(sub_im, axis=0)
         bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)
         dn_dE = self.dNdpx_to_dNdE(dn_dpix, bkg, self.dsdE)
-        plt.plot(self.E, dn_dE)
-        plt.xlim(5, 80)
+        bin_centers, binned_counts, binned_counts_per_MeV = self.bin_1MeV(dn_dE)
+        plt.plot(bin_centers, binned_counts_per_MeV)
+        #plt.xlim(5, 80)
         plt.show()
-
+    
+    
 
 class SpectrumImage:
     def __init__(self, spectrum: SpectrumRescale):
@@ -237,7 +271,7 @@ if __name__ == "__main__":
     spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=20.408)
     spectrum.rescale2D_zero(zero_px=1953)
     #spectrum.rescale2D_ref(refPoint=(38.78, 10))
-    spectrum.sum_dNdE_cursors(500, 700, 300, 400)
+    spectrum.sum_dNdE_cursors(515, 755, 300, 400)
     print(f'{time.time()-t0}s to rescale spectrum')
 
     t0=time.time()
