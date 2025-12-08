@@ -61,8 +61,8 @@ class SpectrumRescale:
 
     def load_image(self):
         self.im = np.array(Image.open(self.imPath))
-        mean_im = np.average(self.im)
-        self.im[self.im<mean_im]=0
+        #mean_im = np.average(self.im)
+        #self.im[self.im<mean_im]=0
         
 
         # TWO DIFFERENT SPECTROMETER GEOMETRIES :
@@ -85,12 +85,16 @@ class SpectrumRescale:
 
         try:
             offset = self.im.shape[1] - self.zero_px
+            print(f'offset: {offset/self.pixel_per_mm}')
             self.s = (np.array(range(0, self.im.shape[1])) - offset) / self.pixel_per_mm # x-axis in space unit
-            print(f'self.s min = {min(self.s)}; self.s max = {max(self.s)}')
+            print(f'self.s = {self.s}')
             self.E = np.interp(self.s, self.s_file, self.E_file, right=np.nan, left=np.nan)
             self.E = np.flip(self.E)
 
             self.dsdE = np.interp(self.s, self.s_file, self.dsdE_file, right=np.nan, left=np.nan)
+            self.dsdE = np.flip(self.dsdE)
+            plt.plot(self.E, self.dsdE)
+            plt.show()
 
         except Exception as e:
             print(f'Exception: {e}')
@@ -126,10 +130,42 @@ class SpectrumRescale:
         self.E = np.flip(self.E)
 
         self.dsdE = np.interp(self.s, self.s_file, self.dsdE_file, right=np.nan, left=np.nan)
+        self.dsdE = np.flip(self.dsdE)
+
 
     def rescale2D_ref(self, refPoint=(40,10)):
         self.rescale1D_ref(refPoint)
         self.y_scale = np.array(range(0, self.im.shape[0])) / self.pixel_per_mm
+
+
+    def dNdpx_to_dNdE(self, dndpix_array, bkg_array, dsdE_array):
+        dNdE = lambda dndpix, bkg, dsdE: (dndpix-bkg) * abs(dsdE) * self.pixel_per_mm
+        dNdE_vect = np.vectorize(dNdE)
+        return dNdE_vect(dndpix_array, bkg_array, dsdE_array)
+
+    def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int):
+        '''
+        :param cur_Ep: high electron signal cursor position, in px
+        :param cur_Em: low electron cursor position, in px
+        :param cur_Bp: high background signal cursor position, in px
+        :param cur_Bm: low background cursor position, in px
+        :return:
+        '''
+        if cur_Em or cur_Ep is None:
+            self.cur_Ep = int(self.im.shape[0]/2+100)
+            self.cur_Em = int(self.im.shape[0]/2-100)
+        if cur_Bm or cur_Bp is None:
+            self.cur_Bm = 0
+            self.cur_Bp = 100
+
+        sub_im = self.im[cur_Em:cur_Ep, :]
+        sub_im_bkg = self.im[cur_Bm:cur_Bp, :]
+        dn_dpix = np.sum(sub_im, axis=0)
+        bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)
+        dn_dE = self.dNdpx_to_dNdE(dn_dpix, bkg, self.dsdE)
+        plt.plot(self.E, dn_dE)
+        plt.xlim(5, 80)
+        plt.show()
 
 
 class SpectrumImage:
@@ -198,9 +234,10 @@ if __name__ == "__main__":
     
     '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
     t0=time.time()
-    spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
-    #spectrum.rescale2D_zero(zero_px=1953)
-    spectrum.rescale2D_ref(refPoint=(38.78, 10))
+    spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=20.408)
+    spectrum.rescale2D_zero(zero_px=1953)
+    #spectrum.rescale2D_ref(refPoint=(38.78, 10))
+    spectrum.sum_dNdE_cursors(500, 700, 300, 400)
     print(f'{time.time()-t0}s to rescale spectrum')
 
     t0=time.time()
@@ -210,6 +247,7 @@ if __name__ == "__main__":
     t0=time.time()
     spectrum_graph = SpectrumGraph(spectrum_image)
     print(f'{time.time()-t0}s to create graphical objects')
+
 
     # start the event loop if running standalone
     pg.exec()
