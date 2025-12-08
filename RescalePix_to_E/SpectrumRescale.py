@@ -61,8 +61,8 @@ class SpectrumRescale:
 
     def load_image(self):
         self.im = np.array(Image.open(self.imPath))
-        mean_im = np.average(self.im)
-        self.im[self.im<mean_im*2]=0
+        #mean_im = np.average(self.im)
+        #self.im[self.im<mean_im*1]=0
         
 
         # TWO DIFFERENT SPECTROMETER GEOMETRIES :
@@ -175,12 +175,13 @@ class SpectrumRescale:
         binned_counts_per_MeV = binned_counts / 1.0  # divided by bin width (1 MeV)
         return bin_centers, binned_counts, binned_counts_per_MeV
 
-    def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int):
+    def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int, threshold: int):
         '''
         :param cur_Ep: high electron signal cursor position, in px
         :param cur_Em: low electron cursor position, in px
         :param cur_Bp: high background signal cursor position, in px
         :param cur_Bm: low background cursor position, in px
+        :param threshold: function computes background sigma, threshold for counting if px > threshold*sigma
         :return:
         '''
         if cur_Em or cur_Ep is None:
@@ -192,12 +193,15 @@ class SpectrumRescale:
 
         sub_im = self.im[cur_Em:cur_Ep, :]
         sub_im_bkg = self.im[cur_Bm:cur_Bp, :]
+        sigma_bg = np.std(sub_im_bkg)
+        sub_im[sub_im<sigma_bg*threshold]=0
+
         dn_dpix = np.sum(sub_im, axis=0)
-        bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)
+        bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)*0
         dn_dE = self.dNdpx_to_dNdE(dn_dpix, bkg, self.dsdE)
         bin_centers, binned_counts, binned_counts_per_MeV = self.bin_1MeV(dn_dE)
         plt.plot(bin_centers, binned_counts_per_MeV)
-        #plt.xlim(5, 80)
+        plt.xlim(5, 80)
         plt.show()
     
     
@@ -271,7 +275,7 @@ if __name__ == "__main__":
     spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=20.408)
     spectrum.rescale2D_zero(zero_px=1953)
     #spectrum.rescale2D_ref(refPoint=(38.78, 10))
-    spectrum.sum_dNdE_cursors(515, 755, 300, 400)
+    spectrum.sum_dNdE_cursors(515, 755, 300, 400, 6)
     print(f'{time.time()-t0}s to rescale spectrum')
 
     t0=time.time()
