@@ -65,10 +65,6 @@ class SpectrumRescale:
         self.im[self.im<mean_im]=0
         
 
-    def remove_meaningless_points(self, x_array, y_array):
-        '''Placeholder for filtering out meaningless data'''
-        pass
-
         # TWO DIFFERENT SPECTROMETER GEOMETRIES :
         #    - With zero (ref without magnet deflection)
         #    - Without zero (ref only from geometry)
@@ -89,7 +85,8 @@ class SpectrumRescale:
 
         try:
             offset = self.im.shape[1] - self.zero_px
-            self.s = ( np.array(range(0, self.im.shape[1])) - offset ) / self.pixel_per_mm # abscisse in space unit
+            self.s = (np.array(range(0, self.im.shape[1])) - offset) / self.pixel_per_mm # x-axis in space unit
+            print(f'self.s min = {min(self.s)}; self.s max = {max(self.s)}')
             self.E = np.interp(self.s, self.s_file, self.E_file, right=np.nan, left=np.nan)
             self.E = np.flip(self.E)
 
@@ -100,7 +97,7 @@ class SpectrumRescale:
 
     def rescale2D_zero(self, zero_px=None, zero_mm=None):
         self.rescale1D_zero(zero_px, zero_mm)
-        self.y_scale = np.array( range(0, self.im.shape[0]) ) / self.pixel_per_mm
+        self.y_scale = np.array(range(0, self.im.shape[0])) / self.pixel_per_mm
 
 
     def rescale1D_ref(self, refPoint=(40,10)):
@@ -110,7 +107,7 @@ class SpectrumRescale:
         
              - refPoint defined from real lanex coordinate and energy E_ref
              - s_ref calculated from interpolation of E_ref in calibration file
-             - Zero assumed on the right of the image (right edge of the lanex).
+             - Lanex zero coordinate assumed on the right of the image (right edge of the lanex).
              - Low energies are on the LEFT, flipping options to be added soon. 
             
         Reference point definition to be added to interface.
@@ -122,8 +119,13 @@ class SpectrumRescale:
 
         self.s_ref = np.interp(refPoint[1], np.flip(self.E_file), np.flip(self.s_file),
                                right=np.nan, left=np.nan) # Flip not too clean, to be sanitized ;)
+        print(f'self.s_ref = {self.s_ref}')
         self.s = np.array(range(0, self.im.shape[1])) / self.pixel_per_mm - (self.s_ref - refPoint[0])
+        print(f'self.s min = {min(self.s)}; self.s max = {max(self.s)}')
         self.E = np.interp(self.s, self.s_file, self.E_file, right=np.nan, left=np.nan)
+        self.E = np.flip(self.E)
+
+        self.dsdE = np.interp(self.s, self.s_file, self.dsdE_file, right=np.nan, left=np.nan)
 
     def rescale2D_ref(self, refPoint=(40,10)):
         self.rescale1D_ref(refPoint)
@@ -197,7 +199,8 @@ if __name__ == "__main__":
     '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
     t0=time.time()
     spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=21.28)
-    spectrum.rescale2D_zero(zero_px=1953)
+    #spectrum.rescale2D_zero(zero_px=1953)
+    spectrum.rescale2D_ref(refPoint=(38.78, 10))
     print(f'{time.time()-t0}s to rescale spectrum')
 
     t0=time.time()
