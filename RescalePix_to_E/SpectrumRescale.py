@@ -85,16 +85,13 @@ class SpectrumRescale:
 
         try:
             offset = self.im.shape[1] - self.zero_px
-            print(f'offset: {offset/self.pixel_per_mm}')
             self.s = (np.array(range(0, self.im.shape[1])) - offset) / self.pixel_per_mm # x-axis in space unit
-            print(f'self.s = {self.s}')
             self.E = np.interp(self.s, self.s_file, self.E_file, right=np.nan, left=np.nan)
             self.E = np.flip(self.E)
 
             self.dsdE = np.interp(self.s, self.s_file, self.dsdE_file, right=np.nan, left=np.nan)
             self.dsdE = np.flip(self.dsdE)
-            plt.plot(self.E, self.dsdE)
-            plt.show()
+
 
         except Exception as e:
             print(f'Exception: {e}')
@@ -140,48 +137,15 @@ class SpectrumRescale:
         dNdE = lambda dndpix, bkg, dsdE: (dndpix-bkg) * abs(dsdE) * self.pixel_per_mm
         dNdE_vect = np.vectorize(dNdE)
         return dNdE_vect(dndpix_array, bkg_array, dsdE_array)
-    
-    def bin_1MeV(self, dn_dE):
-    
-        # Define bin edges at integer MeV values
-        E_min = np.floor(min(self.E))
-        E_max = np.ceil(max(self.E))
-   
-        bin_edges = np.arange(E_min, E_max + 1, 1.0)  # 1 MeV bins
-        
-        # Initialize arrays for binned data
-        n_bins = len(bin_edges) - 1
-        binned_counts = np.zeros(n_bins)
-        bin_centers = bin_edges[:-1] + 0.5
-        
-        # For each original data point, add its contribution to the appropriate bin
-        for i in range(len(self.E)):
-            # Find which bin this energy falls into
-            bin_idx = np.searchsorted(bin_edges[:-1], self.E[i], side='right') - 1
-            
-            if 0 <= bin_idx < n_bins:
-                # Estimate the energy width this point represents
-                if i == 0:
-                    dE = self.E[1] - self.E[0]
-                elif i == len(self.E) - 1:
-                    dE = self.E[-1] - self.E[-2]
-                else:
-                    dE = (self.E[i+1] - self.E[i-1]) / 2
-                
-                # Add counts from this point (counts/MeV * MeV = counts)
-                binned_counts[bin_idx] += dn_dE[i] * dE
-        
-        # Average counts per MeV in each bin
-        binned_counts_per_MeV = binned_counts / 1.0  # divided by bin width (1 MeV)
-        return bin_centers, binned_counts, binned_counts_per_MeV
 
-    def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int, threshold: int):
+    def sum_dNdE_cursors(self, cur_Em: int, cur_Ep: int, cur_Bm: int, cur_Bp: int, threshold: int, pC_per_count:float):
         '''
         :param cur_Ep: high electron signal cursor position, in px
         :param cur_Em: low electron cursor position, in px
         :param cur_Bp: high background signal cursor position, in px
         :param cur_Bm: low background cursor position, in px
         :param threshold: function computes background sigma, threshold for counting if px > threshold*sigma
+        :param pC_per_count: pico Coulomb per count on camera
         :return:
         '''
         if cur_Em or cur_Ep is None:
@@ -194,17 +158,21 @@ class SpectrumRescale:
         sub_im = self.im[cur_Em:cur_Ep, :]
         sub_im_bkg = self.im[cur_Bm:cur_Bp, :]
         sigma_bg = np.std(sub_im_bkg)
-        sub_im[sub_im<sigma_bg*threshold]=0
+        sub_im[sub_im < sigma_bg*threshold] = 0
 
         dn_dpix = np.sum(sub_im, axis=0)
-        bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)*0
-        dn_dE = self.dNdpx_to_dNdE(dn_dpix, bkg, self.dsdE)
-        bin_centers, binned_counts, binned_counts_per_MeV = self.bin_1MeV(dn_dE)
-        plt.plot(bin_centers, binned_counts_per_MeV)
+        bkg = np.sum(sub_im_bkg, axis=0)*(cur_Ep-cur_Em)/(cur_Bp-cur_Bm)*1
+        dn_dE = self.dNdpx_to_dNdE(dn_dpix, bkg, self.dsdE)*pC_per_count
+
+        spectrum = np.loadtxt("MATLAB_Output/MATLAB_Output_2.txt").T
+
+        plt.plot(self.E, dn_dE)
+        plt.plot(spectrum[0], spectrum[1]*1.6e-7)
         plt.xlim(5, 80)
+        plt.xlabel('Energy (MeV)')
+        plt.ylabel('Charge (pC/MeV)')
         plt.show()
-    
-    
+
 
 class SpectrumImage:
     def __init__(self, spectrum: SpectrumRescale):
@@ -270,16 +238,17 @@ class SpectrumGraph:
 
 if __name__ == "__main__":
     
-    '''Experimental data: spatial calibration 49µm/mm, zero position {x=1953px, y=635px}'''
-    t0=time.time()
+    '''Experimental data: spatial calibration 49µm/px, zero position {x=1953px, y=635px}'''
+    t0 = time.time()
     spectrum = SpectrumRescale(plotCal=False, pixel_per_mm=20.408)
     spectrum.rescale2D_zero(zero_px=1953)
     #spectrum.rescale2D_ref(refPoint=(38.78, 10))
-    spectrum.sum_dNdE_cursors(515, 755, 300, 400, 6)
+    #spectrum.sum_dNdE_cursors(580, 685, 0, 100, 1,4.33e-6)
     print(f'{time.time()-t0}s to rescale spectrum')
 
-    t0=time.time()
+    t0 = time.time()
     spectrum_image = SpectrumImage(spectrum)
+
     print(f'{time.time()-t0}s to process data for plotting')
 
     t0=time.time()

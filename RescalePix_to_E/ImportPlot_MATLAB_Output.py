@@ -9,5 +9,5 @@ def load_file(spectrum_path: str):
 
 if __name__ == "__main__":
     spectrum = load_file("MATLAB_Output/MATLAB_Output_2.txt")
-    plt.plot(spectrum[0],spectrum[1])
+    plt.plot(spectrum[0], spectrum[1])
     plt.show()
