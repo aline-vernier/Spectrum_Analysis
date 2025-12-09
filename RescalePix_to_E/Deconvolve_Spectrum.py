@@ -49,8 +49,6 @@ class CalibrationData:
         emax = _e_file.max()
 
         self.energy = np.linspace(emin, emax, int((emax - emin)/_spacing))
-        #print(f'Energy scaled (re)defined, call interpolated_ds_de and interpolated_s')
-        #print(f'dsde and s are None')
         self.dsde = None
         self.s = None
 
@@ -110,12 +108,11 @@ class DeconvolvedSpectrum:
 
     def set_angle(self):
         self.angle = np.linspace(-self._image_dimensions[0] / 2,
-                                 self._image_dimensions[0] / 2, 1) * self.mrad_per_pix
+                                 self._image_dimensions[0] / 2, self._image_dimensions[0]) * self.mrad_per_pix
 
 
 class SpectrumGraph:
     def __init__(self, _spectrum_image: DeconvolvedSpectrum):
-        t0 = time.time()
         self.app = pg.mkQApp()
         self.win = pg.GraphicsLayoutWidget()
         self.win.show()
@@ -132,10 +129,11 @@ class SpectrumGraph:
     def set_image(self, _spectrum_image):
         self.img = pg.ImageItem(_spectrum_image.image.T)  # transpose so axes align correctly
         self.plot.addItem(self.img)
+
         self.img.setRect(
-            _spectrum_image._energy_uneven[0],  # x origin
+            _spectrum_image.energy[0],  # x origin
             _spectrum_image.angle[0],  # y origin
-            _spectrum_image._energy_uneven[-1] - _spectrum_image._energy_uneven[0],  # width
+            _spectrum_image.energy[-1] - _spectrum_image.energy[0],  # width
             _spectrum_image.angle[-1] - _spectrum_image.angle[0]  # height
         )
 
@@ -161,8 +159,8 @@ if __name__ == "__main__":
                                                20.408, 0.1,
                                                "zero", (1953, 635))
 
-    plt.imshow(deconvolved_spectrum.image)
-    plt.show()
+    #plt.imshow(deconvolved_spectrum.image)
+    #plt.show()
 
-    #graph = SpectrumGraph(deconvolved_spectrum)
-    #pg.exec()
+    graph = SpectrumGraph(deconvolved_spectrum)
+    pg.exec()
