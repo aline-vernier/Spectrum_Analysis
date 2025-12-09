@@ -151,16 +151,15 @@ if __name__ == "__main__":
         zero position {x=1953px, y=635px}, 
         signal calibration 4.33e-6pC/count
     """
+    # Load image and calibration
     spImage = spectrum_image(im_path=".\\calib\\magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF",
                            revert=True)
     calibration_data = CalibrationData(cal_path=".\\calib\\dsdE_Small_LHC.txt", spacing=0.1)
 
+    # Deconvolve data
     deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,
                                                20.408, 0.1,
                                                "zero", (1953, 635))
-
-    #plt.imshow(deconvolved_spectrum.image)
-    #plt.show()
-
+    # Show 2D plot
     graph = SpectrumGraph(deconvolved_spectrum)
     pg.exec()
