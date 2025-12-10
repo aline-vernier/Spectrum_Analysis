@@ -73,7 +73,7 @@ class DeconvolvedSpectrum:
             x_max = self.ref_point[0]
 
         elif self.ref_mode == "refpoint":
-            s_ref = np.interp(self.ref_point[1], np.flip(self.calibration.s), np.flip(self.calibration.energy),
+            s_ref = np.interp(self.ref_point[1], self.calibration.energy, self.calibration.s, 
                                         right=np.nan, left=np.nan)
             x_min = int((s_ref - self.ref_point[0])*self.pixel_per_mm)
             x_max = x_min + self._image_dimensions[1]
@@ -169,16 +169,16 @@ if __name__ == "__main__":
         zero position {x=1953px, y=635px}, 
         signal calibration 4.33e-6pC/count
     """
-    show = True
+    show = False
     # Load image and calibration
-    spImage = spectrum_image(im_path=".\\calib\\magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF",
+    spImage = spectrum_image(im_path="./calib/magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF",
                              revert=True)
-    calibration_data = CalibrationData(cal_path=".\\calib\\dsdE_Small_LHC.txt")
+    calibration_data = CalibrationData(cal_path="./calib/dsdE_Small_LHC.txt")
 
     # Deconvolve data
     deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.5,
                                                20.408, 0.1,
-                                               "zero", (1953, 635))
+                                               "refpoint", (47.86, 10))
     t0 = t.time()
     deconvolved_spectrum.deconvolve_data(spImage)
     print(f'Deconvolution time: {t.time()-t0} s')
