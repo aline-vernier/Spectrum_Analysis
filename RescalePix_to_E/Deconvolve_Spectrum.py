@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from PIL import Image
-import time
+import time as t
 import pyqtgraph as pg
 from pyqtgraph import ColorBarItem
 from scipy.interpolate import interp1d
@@ -31,32 +31,11 @@ class CalibrationData:
         dsde: ds/dE interpolated for each energy value
         s: s interpolated for each energy value
     """
-    def __init__(self, cal_path: str, spacing: float):
+    def __init__(self, cal_path: str):
         cal = np.loadtxt(cal_path).T
-        e_file = cal[0]
-        dsde_file = cal[1]
-        s_file = cal[2]
-
-        self.spacing = spacing
-
-        self.energy_equal_spacing(e_file, self.spacing)
-        self.interpolated_ds_de(e_file, dsde_file)
-        self.interpolated_s(e_file, s_file)
-
-
-    def energy_equal_spacing(self, _e_file, _spacing):
-        emin = _e_file.min()
-        emax = _e_file.max()
-
-        self.energy = np.linspace(emin, emax, int((emax - emin)/_spacing))
-        self.dsde = None
-        self.s = None
-
-    def interpolated_ds_de(self, _e_file, _dsde_file):
-        self.dsde = np.interp(self.energy, _e_file, _dsde_file, right=np.nan, left=np.nan)
-
-    def interpolated_s(self, _e_file, _s_file):
-        self.s = np.interp(self.energy, _e_file, _s_file, right=np.nan, left=np.nan)
+        self.energy = cal[0]
+        self.dsde = cal[1]
+        self.s = cal[2]
 
 
 class DeconvolvedSpectrum:
@@ -72,44 +51,56 @@ class DeconvolvedSpectrum:
 
     """
     def __init__(self, image: np.ndarray, calibration: CalibrationData,
-                 pixel_per_mm: float, mrad_per_pix: float,
+                 spacing: float, pixel_per_mm: float, mrad_per_pix: float,
                  ref_mode: str, ref_point: tuple):
+
         self.pixel_per_mm = pixel_per_mm
         self.mrad_per_pix = mrad_per_pix
         self.ref_mode = ref_mode
         self.ref_point = ref_point
         self.calibration = calibration
+        self.spacing = spacing
         self._image_dimensions = image.shape
 
-        self.s_offset_zero(image)
-        self.set_angle()
-    def s_offset_zero(self, image):
-        x_min = self.ref_point[0]-self._image_dimensions[1]
+        self.set_axes()
+
+        self.deconvolve_data(image)
+
+    def set_axes(self):
+
+        # x-axis: energy
+        x_min = self.ref_point[0] - self._image_dimensions[1]
         x_max = self.ref_point[0]
         x_lanex = np.linspace(x_min, x_max, self._image_dimensions[1]) / self.pixel_per_mm
 
-        # Filter data with Yamask
+        # Filter axis with Yamask (Filter-out undefined s-values)
         x_lanex[x_lanex < min(self.calibration.s)] = np.nan
         x_lanex[x_lanex > max(self.calibration.s)] = np.nan
         self._energy_uneven = np.interp(x_lanex, np.flip(self.calibration.s), np.flip(self.calibration.energy),
                                         right=np.nan, left=np.nan)
 
-        valid_yamask = ~np.isnan(x_lanex)  # take only not nan elements
-        self._energy_uneven = self._energy_uneven[valid_yamask]
-        self._filtered_image = image[:, valid_yamask]  # keep all rows, filter columns
-        interp_func = interp1d(self._energy_uneven, self._filtered_image, axis=1, kind='linear')
+        self._valid_yamask = ~np.isnan(x_lanex)  # take only not NaN elements
+        self._energy_uneven = self._energy_uneven[self._valid_yamask]
 
-        emin = min(self._energy_uneven)
-        emax = max(self._energy_uneven)
+        emin = min(self._energy_uneven) # Min measurable energy on lanex
+        emax = max(self._energy_uneven) # Max measurable energy on lanex
+        # Evenly spaced energy axis
+        self.energy = np.linspace(emin, emax, int((emax - emin) / self.spacing))
 
-        self.energy = np.linspace(emin, emax, int((emax-emin)/self.calibration.spacing))
-        self.image = interp_func(self.energy)
-
-
-    def set_angle(self):
+        # y-axis: angle
         self.angle = np.linspace(-self._image_dimensions[0] / 2,
                                  self._image_dimensions[0] / 2, self._image_dimensions[0]) * self.mrad_per_pix
 
+    def deconvolve_data(self, image):
+
+        # keep all rows, filter-out meaningless data from columns
+        self._filtered_image = image[:, self._valid_yamask]
+        # Interpolation function that
+        interp_func = interp1d(self._energy_uneven, self._filtered_image, axis=1, kind='linear')
+        self.image = interp_func(self.energy)
+
+    def integrate_spectrum(self):
+        pass
 
 class SpectrumGraph:
     def __init__(self, _spectrum_image: DeconvolvedSpectrum):
@@ -153,13 +144,16 @@ if __name__ == "__main__":
     """
     # Load image and calibration
     spImage = spectrum_image(im_path=".\\calib\\magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF",
-                           revert=True)
-    calibration_data = CalibrationData(cal_path=".\\calib\\dsdE_Small_LHC.txt", spacing=0.1)
+                             revert=True)
+    calibration_data = CalibrationData(cal_path=".\\calib\\dsdE_Small_LHC.txt")
 
     # Deconvolve data
-    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,
+    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.1,
                                                20.408, 0.1,
                                                "zero", (1953, 635))
+    t0 = t.time()
+    deconvolved_spectrum.deconvolve_data(spImage)
+    print(f'Deconvolution time: {t.time()-t0} s')
     # Show 2D plot
     graph = SpectrumGraph(deconvolved_spectrum)
     pg.exec()
