@@ -20,7 +20,6 @@ def spectrum_image(im_path: str, revert: bool):
 class CalibrationData:
     """
     :param cal_path: path to calibration file (absolute)
-    :param spacing: spacing between energy points, in MeV
     Calibration Data takes a calibration file formatted as:
         1st column: energy in MeV
         2nd column: ds/dE in mm/MeV
@@ -63,21 +62,33 @@ class DeconvolvedSpectrum:
         self._image_dimensions = image.shape
 
         self.set_axes()
+        self.set_dsde()
 
         self.deconvolve_data(image)
 
     def set_axes(self):
-
         # x-axis: energy
-        x_min = self.ref_point[0] - self._image_dimensions[1]
-        x_max = self.ref_point[0]
-        x_lanex = np.linspace(x_min, x_max, self._image_dimensions[1]) / self.pixel_per_mm
+        if self.ref_mode == "zero":
+            x_min = self.ref_point[0] - self._image_dimensions[1]
+            x_max = self.ref_point[0]
 
+        elif self.ref_mode == "refpoint":
+            s_ref = np.interp(self.ref_point[1], np.flip(self.calibration.s), np.flip(self.calibration.energy),
+                                        right=np.nan, left=np.nan)
+            x_min = int((s_ref - self.ref_point[0])*self.pixel_per_mm)
+            x_max = x_min + self._image_dimensions[1]
+
+        else:
+            raise ValueError('referencing mode should be either \"zero\" or \"refpoint\"')
+
+        x_lanex = np.linspace(x_min, x_max, self._image_dimensions[1]) / self.pixel_per_mm
         # Filter axis with Yamask (Filter-out undefined s-values)
         x_lanex[x_lanex < min(self.calibration.s)] = np.nan
         x_lanex[x_lanex > max(self.calibration.s)] = np.nan
         self._energy_uneven = np.interp(x_lanex, np.flip(self.calibration.s), np.flip(self.calibration.energy),
                                         right=np.nan, left=np.nan)
+
+
 
         self._valid_yamask = ~np.isnan(x_lanex)  # take only not NaN elements
         self._energy_uneven = self._energy_uneven[self._valid_yamask]
@@ -91,16 +102,32 @@ class DeconvolvedSpectrum:
         self.angle = np.linspace(-self._image_dimensions[0] / 2,
                                  self._image_dimensions[0] / 2, self._image_dimensions[0]) * self.mrad_per_pix
 
-    def deconvolve_data(self, image):
+    def set_dsde(self):
+        self.dsdE = np.interp(self.energy, self.calibration.energy, self.calibration.dsde,
+                              right=np.nan, left=np.nan)
 
+    def deconvolve_data(self, image):
         # keep all rows, filter-out meaningless data from columns
         self._filtered_image = image[:, self._valid_yamask]
-        # Interpolation function that
+        # Interpolation function: takes data array and creates an interpolation function that can then be called
+        # with any input energy array
         interp_func = interp1d(self._energy_uneven, self._filtered_image, axis=1, kind='linear')
         self.image = interp_func(self.energy)
 
-    def integrate_spectrum(self):
-        pass
+    def integrate_spectrum(self, data_cursors: tuple, background_cursors: tuple):
+        data = self.image[data_cursors[0]:data_cursors[1], :]
+        background = np.average(self.image[background_cursors[0]:background_cursors[1], :])
+        data = data - background
+        self.integrated_spectrum = np.multiply(np.sum(data, axis=0), abs(self.dsdE))
+        print(f'energy min:{self.energy[0]}, energy max: {self.energy[-1]}')
+        print(f'dsde min:{self.dsdE[0]}, dsde max{self.dsdE[-1]}')
+
+        spectrum = np.loadtxt("MATLAB_Output/magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002-sp3.txt").T
+
+        plt.plot(spectrum[0], spectrum[1] * 1.6e-7)
+        plt.plot(self.energy, self.integrated_spectrum * 4.33e-6*self.pixel_per_mm)
+        plt.xlim(4, 80)
+        plt.show()
 
 class SpectrumGraph:
     def __init__(self, _spectrum_image: DeconvolvedSpectrum):
@@ -142,18 +169,24 @@ if __name__ == "__main__":
         zero position {x=1953px, y=635px}, 
         signal calibration 4.33e-6pC/count
     """
+    show = True
     # Load image and calibration
     spImage = spectrum_image(im_path=".\\calib\\magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002.TIFF",
                              revert=True)
     calibration_data = CalibrationData(cal_path=".\\calib\\dsdE_Small_LHC.txt")
 
     # Deconvolve data
-    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.1,
+    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.5,
                                                20.408, 0.1,
                                                "zero", (1953, 635))
     t0 = t.time()
     deconvolved_spectrum.deconvolve_data(spImage)
     print(f'Deconvolution time: {t.time()-t0} s')
-    # Show 2D plot
-    graph = SpectrumGraph(deconvolved_spectrum)
-    pg.exec()
+
+    t0 = t.time()
+    deconvolved_spectrum.integrate_spectrum((600, 670), (750, 850))
+    print(f'Integration time: {t.time() - t0} s')
+    if show:
+        # Show 2D plot
+        graph = SpectrumGraph(deconvolved_spectrum)
+        pg.exec()
