@@ -168,6 +168,8 @@ if __name__ == "__main__":
         spatial calibration 49µm/px, 
         zero position {x=1953px, y=635px}, 
         signal calibration 4.33e-6pC/count
+    For testing purposes, usage with refpoint (x, 10 MeV) as reference:
+        x-coor = s(10MeV)+(imsize-1953)/mm_per_px = 47.86mm 
     """
     show = False
     # Load image and calibration
