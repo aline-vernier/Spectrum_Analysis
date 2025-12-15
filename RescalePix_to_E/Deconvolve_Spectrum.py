@@ -64,7 +64,7 @@ class DeconvolvedSpectrum:
         self.set_axes()
         self.set_dsde()
 
-        self.deconvolve_data(image)
+        #self.deconvolve_data(image)
 
     def set_axes(self):
         # x-axis: energy
@@ -119,8 +119,8 @@ class DeconvolvedSpectrum:
         background = np.average(self.image[background_cursors[0]:background_cursors[1], :])
         data = data - background
         self.integrated_spectrum = np.multiply(np.sum(data, axis=0), abs(self.dsdE))
-        print(f'energy min:{self.energy[0]}, energy max: {self.energy[-1]}')
-        print(f'dsde min:{self.dsdE[0]}, dsde max{self.dsdE[-1]}')
+        #print(f'energy min:{self.energy[0]}, energy max: {self.energy[-1]}')
+        #print(f'dsde min:{self.dsdE[0]}, dsde max{self.dsdE[-1]}')
 
         spectrum = np.loadtxt("MATLAB_Output/magnet0.4T_Soectrum_isat4.9cm_26bar_gdd25850_HeAr_0002-sp3.txt").T
 
@@ -178,9 +178,13 @@ if __name__ == "__main__":
     calibration_data = CalibrationData(cal_path="./calib/dsdE_Small_LHC.txt")
 
     # Deconvolve data
-    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.5,
+    #deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data,0.5,
+    #                                           20.408, 0.1,
+    #                                           "refpoint", (47.855, 10))
+
+    deconvolved_spectrum = DeconvolvedSpectrum(spImage, calibration_data, 0.5,
                                                20.408, 0.1,
-                                               "refpoint", (47.86, 10))
+                                               "zero", (1953, 635))
     t0 = t.time()
     deconvolved_spectrum.deconvolve_data(spImage)
     print(f'Deconvolution time: {t.time()-t0} s')
